@@ -1,7 +1,40 @@
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import uuid
+import time
+
+app = FastAPI()
+
+# ----------------------------
+# CONFIGURATION
+# ----------------------------
+EMAIL = "24f2008801@ds.study.iitm.ac.in"
+
+WINDOW = 10          # seconds
+LIMIT = 10           # requests per window
+rate_limit = {}
+
+# ----------------------------
+# CORS
+# ----------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://app-fs0hy9.example.com"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ----------------------------
+# MIDDLEWARE
+# ----------------------------
 @app.middleware("http")
 async def middleware(request: Request, call_next):
 
-    # Let CORS middleware handle browser preflight
+    # Allow CORS preflight requests
     if request.method == "OPTIONS":
         return await call_next(request)
 
@@ -24,9 +57,11 @@ async def middleware(request: Request, call_next):
             status_code=429,
             headers={
                 "Retry-After": "10",
-                "X-Request-ID": request_id
+                "X-Request-ID": request_id,
             },
-            content={"detail": "Rate limit exceeded"},
+            content={
+                "detail": "Rate limit exceeded"
+            },
         )
 
     history.append(now)
@@ -36,3 +71,20 @@ async def middleware(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
 
     return response
+
+# ----------------------------
+# ROOT (Render health check)
+# ----------------------------
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
+# ----------------------------
+# PING ENDPOINT
+# ----------------------------
+@app.get("/ping")
+async def ping(request: Request):
+    return {
+        "email": EMAIL,
+        "request_id": request.state.request_id
+    }
