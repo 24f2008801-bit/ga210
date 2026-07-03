@@ -6,46 +6,52 @@ import time
 
 app = FastAPI()
 
-# ----------------------------
+# ==========================================
 # CONFIGURATION
-# ----------------------------
+# ==========================================
 EMAIL = "24f2008801@ds.study.iitm.ac.in"
 
-WINDOW = 10          # seconds
-LIMIT = 10           # requests per window
+WINDOW = 10   # seconds
+LIMIT = 10    # requests per window
+
 rate_limit = {}
 
-# ----------------------------
+# ==========================================
 # CORS
-# ----------------------------
+# ==========================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://app-fs0hy9.example.com"
+        "https://app-fs0hy9.example.com",
+        "https://exam.sanand.work",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ----------------------------
+# ==========================================
 # MIDDLEWARE
-# ----------------------------
+# ==========================================
 @app.middleware("http")
 async def middleware(request: Request, call_next):
 
-    # Allow CORS preflight requests
+    # Let CORS handle preflight requests
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    # Request ID
+    # -----------------------
+    # Request Context
+    # -----------------------
     request_id = request.headers.get("X-Request-ID")
     if not request_id:
         request_id = str(uuid.uuid4())
 
     request.state.request_id = request_id
 
-    # Rate limiting
+    # -----------------------
+    # Rate Limiting
+    # -----------------------
     client_id = request.headers.get("X-Client-Id", "anonymous")
     now = time.time()
 
@@ -59,29 +65,28 @@ async def middleware(request: Request, call_next):
                 "Retry-After": "10",
                 "X-Request-ID": request_id,
             },
-            content={
-                "detail": "Rate limit exceeded"
-            },
+            content={"detail": "Rate limit exceeded"},
         )
 
     history.append(now)
     rate_limit[client_id] = history
 
     response = await call_next(request)
+
     response.headers["X-Request-ID"] = request_id
 
     return response
 
-# ----------------------------
-# ROOT (Render health check)
-# ----------------------------
+# ==========================================
+# ROOT
+# ==========================================
 @app.get("/")
 async def root():
     return {"status": "ok"}
 
-# ----------------------------
-# PING ENDPOINT
-# ----------------------------
+# ==========================================
+# /PING
+# ==========================================
 @app.get("/ping")
 async def ping(request: Request):
     return {
