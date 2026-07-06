@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 import uuid
 import time
 
@@ -12,6 +13,68 @@ WINDOW = 10
 LIMIT = 10
 
 rate_limit = {}
+
+
+# --------------------------------------------------
+# Request Context Middleware
+# --------------------------------------------------
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+
+        request_id = request.headers.get("X-Request-ID")
+        if not request_id:
+            request_id = str(uuid.uuid4())
+
+        request.state.request_id = request_id
+
+        response = await call_next(request)
+
+        response.headers["X-Request-ID"] = request_id
+
+        return response
+
+
+# --------------------------------------------------
+# Rate Limit Middleware
+# --------------------------------------------------
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+
+        # Skip preflight
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        # Ensure request_id always exists
+        request_id = request.headers.get("X-Request-ID")
+        if not request_id:
+            request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+            request.state.request_id = request_id
+
+        client_id = request.headers.get("X-Client-Id")
+
+        # Requests without X-Client-Id each get their own bucket
+        if client_id is None:
+            client_id = request_id
+
+        now = time.time()
+
+        history = rate_limit.get(client_id, [])
+        history = [t for t in history if now - t < WINDOW]
+
+        if len(history) >= LIMIT:
+            response = JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded"},
+            )
+            response.headers["Retry-After"] = str(WINDOW)
+            response.headers["X-Request-ID"] = request_id
+            return response
+
+        history.append(now)
+        rate_limit[client_id] = history
+
+        return await call_next(request)
+
 
 # --------------------------------------------------
 # CORS
@@ -34,57 +97,9 @@ app.add_middleware(
     ],
 )
 
-# --------------------------------------------------
-# Request Context + Rate Limiting
-# --------------------------------------------------
-@app.middleware("http")
-async def request_context_and_rate_limit(request: Request, call_next):
-
-    # -------------------------
-    # Request ID
-    # -------------------------
-    request_id = request.headers.get("X-Request-ID")
-    if not request_id:
-        request_id = str(uuid.uuid4())
-
-    request.state.request_id = request_id
-
-    # -------------------------
-    # Skip rate limit for CORS preflight
-    # -------------------------
-    if request.method != "OPTIONS":
-
-        client_id = request.headers.get("X-Client-Id")
-
-        # Requests without X-Client-Id get their own bucket
-        if client_id is None:
-            client_id = request_id
-
-        now = time.time()
-
-        history = rate_limit.get(client_id, [])
-        history = [t for t in history if now - t < WINDOW]
-
-        if len(history) >= LIMIT:
-            response = JSONResponse(
-                status_code=429,
-                content={"detail": "Rate limit exceeded"},
-                headers={
-                    "Retry-After": str(WINDOW),
-                    "X-Request-ID": request_id,
-                },
-            )
-            return response
-
-        history.append(now)
-        rate_limit[client_id] = history
-
-    response = await call_next(request)
-
-    # Always echo request id
-    response.headers["X-Request-ID"] = request_id
-
-    return response
+# Middleware execution is reverse order of addition
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(RequestContextMiddleware)
 
 
 # --------------------------------------------------
