@@ -8,43 +8,35 @@ app = FastAPI()
 
 EMAIL = "24f2008801@ds.study.iitm.ac.in"
 
-WINDOW = 10  # seconds
-LIMIT = 10   # requests per window
+WINDOW = 10
+LIMIT = 10
 
 rate_limit = {}
 
-# ----------------------------------------------------
-# CORS Middleware
-# ----------------------------------------------------
+# --------------------------------------------------
+# CORS
+# --------------------------------------------------
 app.add_middleware(
-
     CORSMiddleware,
-
     allow_origins=[
-
         "https://app-fs0hy9.example.com",
-
         "https://exam.sanand.workers.dev",
-
     ],
-
     allow_methods=["GET", "OPTIONS"],
-
     allow_headers=[
-
         "X-Request-ID",
-
         "X-Client-Id",
-
         "Content-Type",
-
     ],
-
+    expose_headers=[
+        "X-Request-ID",
+        "Retry-After",
+    ],
 )
 
-# ----------------------------------------------------
-# Request Context + Rate Limiting Middleware
-# ----------------------------------------------------
+# --------------------------------------------------
+# Request Context + Rate Limiting
+# --------------------------------------------------
 @app.middleware("http")
 async def request_context_and_rate_limit(request: Request, call_next):
 
@@ -55,7 +47,7 @@ async def request_context_and_rate_limit(request: Request, call_next):
 
     request.state.request_id = request_id
 
-    # Skip rate limiting for preflight requests
+    # Skip rate limiting for CORS preflight
     if request.method != "OPTIONS":
 
         client_id = request.headers.get("X-Client-Id", "anonymous")
@@ -67,11 +59,11 @@ async def request_context_and_rate_limit(request: Request, call_next):
         if len(history) >= LIMIT:
             return JSONResponse(
                 status_code=429,
+                content={"detail": "Rate limit exceeded"},
                 headers={
                     "Retry-After": str(WINDOW),
                     "X-Request-ID": request_id,
                 },
-                content={"detail": "Rate limit exceeded"},
             )
 
         history.append(now)
@@ -79,22 +71,23 @@ async def request_context_and_rate_limit(request: Request, call_next):
 
     response = await call_next(request)
 
+    # Echo the request ID in every response
     response.headers["X-Request-ID"] = request_id
 
     return response
 
 
-# ----------------------------------------------------
-# Root Endpoint
-# ----------------------------------------------------
+# --------------------------------------------------
+# Root
+# --------------------------------------------------
 @app.get("/")
 async def root():
     return {"status": "ok"}
 
 
-# ----------------------------------------------------
-# Ping Endpoint
-# ----------------------------------------------------
+# --------------------------------------------------
+# Ping
+# --------------------------------------------------
 @app.get("/ping")
 async def ping(request: Request):
     return {
