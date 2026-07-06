@@ -40,24 +40,33 @@ app.add_middleware(
 @app.middleware("http")
 async def request_context_and_rate_limit(request: Request, call_next):
 
+    # -------------------------
     # Request ID
+    # -------------------------
     request_id = request.headers.get("X-Request-ID")
     if not request_id:
         request_id = str(uuid.uuid4())
 
     request.state.request_id = request_id
 
-    # Skip rate limiting for CORS preflight
+    # -------------------------
+    # Skip rate limit for CORS preflight
+    # -------------------------
     if request.method != "OPTIONS":
 
         client_id = request.headers.get("X-Client-Id")
+
+        # Requests without X-Client-Id get their own bucket
+        if client_id is None:
+            client_id = request_id
+
         now = time.time()
 
         history = rate_limit.get(client_id, [])
         history = [t for t in history if now - t < WINDOW]
 
         if len(history) >= LIMIT:
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=429,
                 content={"detail": "Rate limit exceeded"},
                 headers={
@@ -65,13 +74,14 @@ async def request_context_and_rate_limit(request: Request, call_next):
                     "X-Request-ID": request_id,
                 },
             )
+            return response
 
         history.append(now)
         rate_limit[client_id] = history
 
     response = await call_next(request)
 
-    # Echo the request ID in every response
+    # Always echo request id
     response.headers["X-Request-ID"] = request_id
 
     return response
