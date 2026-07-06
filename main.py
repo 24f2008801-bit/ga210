@@ -50,7 +50,7 @@ async def request_context_and_rate_limit(request: Request, call_next):
     # Skip rate limiting for CORS preflight
     if request.method != "OPTIONS":
 
-        client_id = request.headers.get("X-Client-Id", "anonymous")
+        client_id = request.headers.get("X-Client-Id")
         now = time.time()
 
         history = rate_limit.get(client_id, [])
