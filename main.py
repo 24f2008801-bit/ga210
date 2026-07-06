@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,27 +8,43 @@ app = FastAPI()
 
 EMAIL = "24f2008801@ds.study.iitm.ac.in"
 
-WINDOW = 10      # seconds
-LIMIT = 10       # requests per window
+WINDOW = 10  # seconds
+LIMIT = 10   # requests per window
 
 rate_limit = {}
 
-# -----------------------------
+# ----------------------------------------------------
 # CORS Middleware
-# -----------------------------
+# ----------------------------------------------------
 app.add_middleware(
+
     CORSMiddleware,
+
     allow_origins=[
+
         "https://app-fs0hy9.example.com",
-        "https://exam.sanand.work",
+
+        "https://exam.sanand.workers.dev",
+
     ],
-    allow_methods=["*"],
-    allow_headers=["*"],
+
+    allow_methods=["GET", "OPTIONS"],
+
+    allow_headers=[
+
+        "X-Request-ID",
+
+        "X-Client-Id",
+
+        "Content-Type",
+
+    ],
+
 )
 
-# -----------------------------
-# Request Context + Rate Limiting
-# -----------------------------
+# ----------------------------------------------------
+# Request Context + Rate Limiting Middleware
+# ----------------------------------------------------
 @app.middleware("http")
 async def request_context_and_rate_limit(request: Request, call_next):
 
@@ -40,7 +55,7 @@ async def request_context_and_rate_limit(request: Request, call_next):
 
     request.state.request_id = request_id
 
-    # Skip rate limiting for CORS preflight
+    # Skip rate limiting for preflight requests
     if request.method != "OPTIONS":
 
         client_id = request.headers.get("X-Client-Id", "anonymous")
@@ -68,16 +83,18 @@ async def request_context_and_rate_limit(request: Request, call_next):
 
     return response
 
-# -----------------------------
-# Root
-# -----------------------------
+
+# ----------------------------------------------------
+# Root Endpoint
+# ----------------------------------------------------
 @app.get("/")
 async def root():
     return {"status": "ok"}
 
-# -----------------------------
-# Ping
-# -----------------------------
+
+# ----------------------------------------------------
+# Ping Endpoint
+# ----------------------------------------------------
 @app.get("/ping")
 async def ping(request: Request):
     return {
